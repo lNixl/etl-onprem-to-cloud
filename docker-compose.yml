@@ -96,7 +96,7 @@ services:
       # Cadena de conexión a la base de datos de Airflow (Postgres)
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow  
       # Clave Fernet para cifrar contraseñas, conexiones, etc.
-      AIRFLOW__CORE__FERNET_KEY: "mJsSgcRLnNBAj0XZyBs08wU6iIbRQtPjxRV9hEw0HHc="
+      AIRFLOW__CORE__FERNET_KEY: "p2fFsLiwPnSwHrJvFauNe7lji77z3ziYvHdZwUHr6OI="
     # Comando que se ejecuta al levantar este servicio:
     # 1) Inicializa la base de datos de Airflow (airflow db init)
     # 2) Crea un usuario admin por defecto
@@ -138,7 +138,7 @@ services:
       # Igual: ejecutor LocalExecutor
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       # Misma clave Fernet (debe ser igual en todos los servicios de Airflow)
-      AIRFLOW__CORE__FERNET_KEY: "mJsSgcRLnNBAj0XZyBs08wU6iIbRQtPjxRV9hEw0HHc="
+      AIRFLOW__CORE__FERNET_KEY: "p2fFsLiwPnSwHrJvFauNe7lji77z3ziYvHdZwUHr6OI="
       # No cargar los DAGs de ejemplo de Airflow (más limpio)
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       # Conexión a la base de datos de Airflow
@@ -180,7 +180,7 @@ services:
       # Mismo executor
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       # Misma clave Fernet
-      AIRFLOW__CORE__FERNET_KEY: "mJsSgcRLnNBAj0XZyBs08wU6iIbRQtPjxRV9hEw0HHc="
+      AIRFLOW__CORE__FERNET_KEY: "p2fFsLiwPnSwHrJvFauNe7lji77z3ziYvHdZwUHr6OI="
       # Conexión a la base de datos
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     volumes:
