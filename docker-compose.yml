@@ -1,0 +1,197 @@
+# Versión del formato de docker-compose
+version: "3.9"
+
+services:
+  # ===================== SPARK =====================
+  spark-master:
+    # Imagen oficial de Apache Spark ya preparada con:
+    # Scala 2.12, Java 17, Python 3, R y Ubuntu
+    image: apache/spark:3.5.7-scala2.12-java17-python3-r-ubuntu
+    container_name: spark-master
+    # Comando que se ejecuta al iniciar el contenedor:
+    # 1) Inicia el Spark Master
+    # 2) Usa 'tail -f /dev/null' para que el contenedor no se detenga (se quede vivo)
+    command: >
+      bash -c "/opt/spark/sbin/start-master.sh && tail -f /dev/null"
+    ports:
+      # Mapea el puerto 8080 del Spark Master UI al 8081 de tu máquina
+      # Así lo ves en: http://localhost:8081
+      - "8081:8080"    # Spark Master UI -> http://localhost:8081
+      # Puerto por donde otros nodos (workers / clientes) se conectan al master
+      - "7077:7077"    # Puerto del cluster
+    environment:
+      # Variable para indicar que este contenedor actúa como master (opcional con esta imagen)
+      - SPARK_MODE=master
+    volumes:
+      # Monta la carpeta local ./etl dentro del contenedor en /opt/etl
+      # Aquí normalmente tienes tus scripts PySpark o ETL
+      - ./etl:/opt/etl
+      # Monta ./data local en /opt/data dentro del contenedor
+      # Para compartir archivos de entrada/salida (csv, parquet, etc.)
+      - ./data:/opt/data
+
+  spark-worker:
+    # Mismo tipo de imagen de Spark que el master
+    image: apache/spark:3.5.7-scala2.12-java17-python3-r-ubuntu
+    container_name: spark-worker
+    # Comando:
+    # 1) Inicia un Spark Worker
+    # 2) Le indica al worker que se conecte al master en spark://spark-master:7077
+    # 3) tail -f /dev/null para que el contenedor quede corriendo
+    command: >
+      bash -c "/opt/spark/sbin/start-worker.sh spark://spark-master:7077 && tail -f /dev/null"
+    # Espera a que el master esté arriba antes de levantarse
+    depends_on:
+      - spark-master
+    environment:
+      # Variable para indicar que este contenedor es un worker (de nuevo, según la imagen)
+      - SPARK_MODE=worker
+    volumes:
+      # Comparte la carpeta ./etl con el worker
+      # Útil si el worker necesita leer scripts que tengas en local
+      - ./etl:/opt/etl
+      # Comparte la carpeta ./data para que worker vea los mismos datos que Airflow / master
+      - ./data:/opt/data
+
+  # ===================== AIRFLOW METADATA DB =====================
+  postgres:
+    # Base de datos Postgres para almacenar la metadata de Airflow
+    image: postgres:13
+    environment:
+      # Usuario, contraseña y base de datos de Airflow
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    ports:
+      # Exponer Postgres: puerto 5432 del contenedor -> 5433 en tu máquina
+      # Puedes conectarte desde tu host a localhost:5433 si quieres revisar la DB
+      - "5433:5432"
+    volumes:
+      # Volumen persistente para que la data de Postgres no se pierda al apagar contenedores
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    # Redis se usa como backend de cola/mensajes para Airflow (cuando usas Celery, etc.)
+    image: redis:latest
+    ports:
+      # Exponer Redis en el puerto 6379 de tu máquina
+      - "6379:6379"
+
+  # ===================== AIRFLOW INIT (DB + USUARIO) =====================
+  airflow-init:
+    # Usamos la imagen custom de Airflow que tú construyes con Dockerfile.airflow
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    # Archivo .env para pasar variables de entorno (ACCESS_KEY, SECRET, etc.)
+    env_file:
+    - .env
+    depends_on:
+      # Espera a que Postgres y Redis estén listos antes de correr la inicialización
+      - postgres
+      - redis
+    environment:
+      # Ejecutor de Airflow: LocalExecutor (usa procesos locales en vez de SequentialExecutor)
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      # Cadena de conexión a la base de datos de Airflow (Postgres)
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow  
+      # Clave Fernet para cifrar contraseñas, conexiones, etc.
+      AIRFLOW__CORE__FERNET_KEY: "mJsSgcRLnNBAj0XZyBs08wU6iIbRQtPjxRV9hEw0HHc="
+    # Comando que se ejecuta al levantar este servicio:
+    # 1) Inicializa la base de datos de Airflow (airflow db init)
+    # 2) Crea un usuario admin por defecto
+    # 3) Si el usuario ya existe, no falla (por el '|| true')
+    command: >
+      bash -c "airflow db init &&
+               airflow users create
+                 --username admin
+                 --password admin
+                 --firstname admin
+                 --lastname admin
+                 --role Admin
+                 --email admin@example.com
+               || true"
+    volumes:
+      # Monta la carpeta ./dags en /opt/airflow/dags para que Airflow vea tus DAGs
+      - ./dags:/opt/airflow/dags
+      # Monta ./etl para que los scripts de ETL estén disponibles dentro de Airflow
+      - ./etl:/opt/etl
+      # Monta ./data para que Airflow acceda a los mismos datos que Spark
+      - ./data:/opt/data
+
+  # ===================== AIRFLOW WEBSERVER =====================
+  airflow-webserver:
+    # Igual que airflow-init, usa la misma imagen custom de Airflow con PySpark, etc.
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    env_file:
+    - .env
+    depends_on:
+      # No arranca hasta que:
+      # - Se haya inicializado Airflow (airflow-init)
+      # - Postgres y Redis estén arriba
+      - airflow-init
+      - postgres
+      - redis
+    environment:
+      # Igual: ejecutor LocalExecutor
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      # Misma clave Fernet (debe ser igual en todos los servicios de Airflow)
+      AIRFLOW__CORE__FERNET_KEY: "mJsSgcRLnNBAj0XZyBs08wU6iIbRQtPjxRV9hEw0HHc="
+      # No cargar los DAGs de ejemplo de Airflow (más limpio)
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      # Conexión a la base de datos de Airflow
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    ports:
+      # Exponer la UI de Airflow al puerto 8080 de tu máquina
+      # Acceso: http://localhost:8080
+      - "8080:8080"    # Airflow UI -> http://localhost:8080
+    # Este servicio ejecuta el comando 'webserver' de Airflow
+    command: webserver
+    volumes:
+      # Monta tus DAGs
+      - ./dags:/opt/airflow/dags
+      # Monta ./etl dentro de Airflow: así puedes importar scripts de ETL desde tus DAGs
+      - ./etl:/opt/etl          # para que existan /opt/etl/*.py dentro de Airflow
+      # Monta ./data para que Airflow vea input/processed igual que Spark
+      - ./data:/opt/data        # para que vea /opt/data/input y /opt/data/processed
+
+  # ===================== AIRFLOW SCHEDULER =====================
+  airflow-scheduler:
+    # De nuevo, usa tu imagen customizada de Airflow
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    env_file:
+    - .env
+    depends_on:
+      # Scheduler arranca después de:
+      # - airflow-init (DB lista, usuario creado)
+      # - airflow-webserver
+      # - redis y postgres
+      - airflow-init
+      - airflow-webserver
+      - redis
+      - postgres
+    # Este corre el proceso 'scheduler' de Airflow
+    command: scheduler
+    environment:
+      # Mismo executor
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      # Misma clave Fernet
+      AIRFLOW__CORE__FERNET_KEY: "mJsSgcRLnNBAj0XZyBs08wU6iIbRQtPjxRV9hEw0HHc="
+      # Conexión a la base de datos
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    volumes:
+      # DAGs compartidos con el scheduler
+      - ./dags:/opt/airflow/dags
+      # Scripts ETL disponibles para los tasks
+      - ./etl:/opt/etl
+      # Datos compartidos
+      - ./data:/opt/data
+
+# Definición de volúmenes persistentes
+volumes:
+  # Volumen para que la data de Postgres sobreviva aunque borres/recrees contenedores
+  postgres_data:

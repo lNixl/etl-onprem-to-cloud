@@ -1,0 +1,46 @@
+# Imagen base:
+# Usamos la imagen oficial de Apache Airflow, versión 2.7.1 con Python 3.10
+# Esto ya incluye Airflow, Python y sus dependencias básicas.
+FROM apache/airflow:2.7.1-python3.10
+
+
+# ----- PASO 1: Instalar Java dentro de la imagen -----
+
+# Cambiamos al usuario root para poder instalar paquetes del sistema
+# El usuario 'airflow' no tiene permisos para usar apt-get
+USER root
+
+# Actualizamos la lista de paquetes disponibles (apt-get update)
+# e instalamos Java 17 (versión sin interfaz gráfica: headless).
+# Java es obligatorio para que PySpark funcione.
+# Al final, limpiamos los archivos temporales para reducir el tamaño de la imagen.
+RUN apt-get update && \
+    apt-get install -y openjdk-17-jre-headless && \
+    rm -rf /var/lib/apt/lists/*
+
+
+# ----- PASO 2: Configurar la variable JAVA_HOME -----
+
+# Definimos la ruta donde quedó instalado Java
+# Esto es necesario para que Spark lo detecte correctamente
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+
+
+# Agregamos la carpeta /bin de Java al PATH del sistema
+# Esto permite ejecutar el comando `java` desde cualquier lugar
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+
+# ----- PASO 3: Volver al usuario airflow -----
+
+# Volvemos al usuario airflow por seguridad
+# Airflow nunca debería ejecutar procesos como root en producción
+USER airflow
+
+
+# ----- PASO 4: Instalar librerías Python necesarias -----
+
+# Instalamos PySpark (para trabajar con Spark en Python)
+# e instalamos el conector de MySQL para poder leer/escribir en bases MySQL
+# --no-cache-dir evita que pip guarde archivos temporales (imagen más liviana)
+RUN pip install --no-cache-dir pyspark mysql-connector-python

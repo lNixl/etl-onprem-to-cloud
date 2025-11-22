@@ -1,0 +1,74 @@
+# ================================
+# Python / PySpark
+# ================================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+
+# ================================
+# Entornos virtuales
+# ================================
+.venv/
+venv/
+env/
+
+# ================================
+# Variables de entorno
+# ================================
+.env
+.env.*
+!.env.example
+
+
+
+# Si quieres permitir estructura pero no datos reales:
+!data/input/.gitkeep
+!data/processed/.gitkeep
+
+# ================================
+# Spark / Hadoop
+# ================================
+spark-warehouse/
+metastore_db/
+
+# ================================
+# Airflow
+# ================================
+airflow.cfg
+airflow-webserver.pid
+logs/
+*.pid
+
+# ================================
+# Docker
+# ================================
+postgres_data/
+*.tar
+*.tar.gz
+*.zip
+
+# ================================
+# Sistema operativo
+# ================================
+.DS_Store
+Thumbs.db
+
+# ================================
+# IDE / Editor
+# ================================
+.vscode/
+.idea/
+*.iml
+
+# ================================
+# Notebooks
+# ================================
+.ipynb_checkpoints/
+
+# ================================
+# Build / dist
+# ================================
+build/
+dist/
