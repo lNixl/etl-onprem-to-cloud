@@ -1,4 +1,4 @@
-# Ejecución del Sistema ETL con Airflow & Docker
+<img width="1234" height="946" alt="Screenshot_1" src="https://github.com/user-attachments/assets/4b2f9733-15d7-49b8-b6d9-4387ddbf4769" /># EJECUCIÓN DEL SISTEMA ETL CON AIRFLOW & DOCKER
 
 1. Primero crear una carpeta **.env**  
    - En la raíz del proyecto crea una carpeta llamada `.env` (o usa un archivo `.env` según tu estructura).  
@@ -241,3 +241,11 @@
         - **Resolución:** 1600px
     - Haz clic en **Crear**.
 9. **Construir el dashboard**
+---
+# REPORTE & ARQUITECTURA
+**Reporte**
+<img width="1234" height="946" alt="Screenshot_1" src="https://github.com/user-attachments/assets/ce20fbc6-a527-4d81-a93e-6e49c028ac0e" />
+**Arquitectura**
+![Arquitectura](https://github.com/user-attachments/assets/1b4a52d8-b90e-411a-9b56-800740b7ff5e)
+
+
