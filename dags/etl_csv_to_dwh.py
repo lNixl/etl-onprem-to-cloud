@@ -11,7 +11,7 @@ default_args = {
 with DAG(
     dag_id="etl_csv_to_dwh",
     description="ETL: CSV -> Spark -> MySQL",
-    schedule_interval="*/5 * * * *",  # cada 5 minutos
+    # schedule_interval="*/5 * * * *",  # cada 5 minutos
     start_date=datetime(2025, 1, 1),
     catchup=False,
     max_active_runs=1,

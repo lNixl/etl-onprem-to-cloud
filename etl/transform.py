@@ -1,8 +1,13 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, split, when, regexp_replace, trim, udf
+from pyspark.sql.functions import (
+    col, split, when, regexp_replace, trim,
+    udf, concat, lit
+)
 from pyspark.sql.types import StringType
 
-# Crear sesión Spark
+# =========================
+# 1. Crear sesión Spark
+# =========================
 spark = SparkSession.builder \
     .appName("Netflix_TV_Shows_Clean") \
     .getOrCreate()
@@ -11,21 +16,28 @@ spark = SparkSession.builder \
 input_path = "/opt/data/input/netflix_titles.csv"
 output_path = "/opt/data/processed/netflix_tv_clean"
 
-# 1. Leer CSV
+# =========================
+# 2. Leer CSV original
+# =========================
 df = spark.read.csv(input_path, header=True, inferSchema=True)
 
-# 2. Filtrar SOLO TV Shows
+# =========================
+# 3. Filtrar SOLO TV Shows
+# =========================
 df = df.filter(col("type") == "TV Show")
 
-# 3. Crear columna main_genre
+# =========================
+# 4. Columna main_genre
+# =========================
 df = df.withColumn(
     "main_genre",
     split(col("listed_in"), ",")[0]
 )
 
-# ===== NUEVO: LIMPIEZA Y FILTRO POR PAÍSES DE EUROPA =====
+# ==========================================================
+# 5. LIMPIEZA Y FILTRO POR PAÍSES DE EUROPA
+# ==========================================================
 
-# Lista de países europeos que aparecen (o pueden aparecer) en tu dataset
 EUROPE_COUNTRIES_STD = {
     "United Kingdom": "United Kingdom",
     "England": "United Kingdom",
@@ -62,51 +74,50 @@ EUROPE_COUNTRIES_STD = {
 def get_europe_country(country_str):
     if not country_str:
         return None
-    # limpiar comillas raras y espacios
+    # limpiar comillas y espacios
     cleaned = country_str.replace('"', '')
     parts = [p.strip() for p in cleaned.split(",") if p.strip() != ""]
     for p in parts:
         if p in EUROPE_COUNTRIES_STD:
-            # devolver nombre estandarizado
             return EUROPE_COUNTRIES_STD[p]
     return None
 
-# Limpiar country base (quitar comillas y espacios externos)
+# Limpiar base de country (quitar comillas y espacios externos)
 df = df.withColumn("country", trim(regexp_replace(col("country"), '"', '')))
 
-# Obtener país europeo estandarizado (si existe)
+# Obtener país europeo estandarizado
 df = df.withColumn("country_eu", get_europe_country(col("country")))
 
-# Nos quedamos solo con filas que tienen algún país europeo
+# Quedarnos solo con filas que tienen país europeo
 df = df.filter(col("country_eu").isNotNull())
 
 # ==========================================================
-
-# 5. LIMPIAR release_year (solo números)
+# 6. LIMPIAR release_year (solo números)
+# ==========================================================
 df = df.withColumn(
     "release_year",
     regexp_replace(col("release_year"), "[^0-9]", "")
 )
 
 df = df.filter(col("release_year") != "")
-
-# Convertir a entero
 df = df.withColumn("release_year", col("release_year").cast("int"))
 
-# 6. Ratings válidos
+# ==========================================================
+# 7. Normalizar rating y significado
+# ==========================================================
 ratings_validos = [
     "TV-G", "TV-Y", "TV-Y7", "TV-Y7-FV",
     "TV-PG", "TV-14", "TV-MA",
     "G", "PG", "PG-13", "R", "NC-17", "NR"
 ]
 
-# 7. Limpiar rating
+# rating limpio
 df = df.withColumn(
     "rating_clean",
     when(col("rating").isin(ratings_validos), col("rating")).otherwise("UNKNOWN")
 )
 
-# 8. Crear significado del rating
+# significado de rating
 df = df.withColumn(
     "rating_meaning",
     when(col("rating_clean") == "TV-G", "Todo público")
@@ -125,7 +136,16 @@ df = df.withColumn(
     .otherwise("Desconocido")
 )
 
-# 9. ESTANDARIZACIÓN GENERAL DE GÉNEROS
+# como capa extra de protección, si por alguna razón rating_clean no es válido:
+df = df.withColumn(
+    "rating_meaning",
+    when(col("rating_clean").isin(ratings_validos), col("rating_meaning"))
+    .otherwise("Desconocido")
+)
+
+# ==========================================================
+# 8. Agrupar géneros en genre_group
+# ==========================================================
 df = df.withColumn(
     "genre_group",
     when(col("main_genre").like("%Kids%"), "Kids")
@@ -143,7 +163,28 @@ df = df.withColumn(
     .otherwise("Other")
 )
 
-# 10. Seleccionar columnas finales (usando el país europeo estandarizado)
+# ==========================================================
+# 9. Limpieza extra de textos (comillas + comas en title)
+# ==========================================================
+
+# Quitar comillas dobles de columnas de texto
+cols_to_clean = ["title", "country", "country_eu", "main_genre", "rating_meaning"]
+for c in cols_to_clean:
+    df = df.withColumn(c, regexp_replace(col(c), '"', ''))
+
+# Reemplazar comas en el título por " - "
+# Esto evita que, al exportar a CSV, las comas rompan las columnas
+df = df.withColumn("title", regexp_replace(col("title"), ",", " -"))
+
+# Eliminar espacios extremos
+df = df.withColumn("title", trim(col("title")))
+df = df.withColumn("rating_meaning", trim(col("rating_meaning")))
+df = df.withColumn("main_genre", trim(col("main_genre")))
+df = df.withColumn("country_eu", trim(col("country_eu")))
+
+# ==========================================================
+# 10. Seleccionar columnas finales
+# ==========================================================
 df_clean = df.select(
     col("show_id"),
     col("title"),
@@ -155,7 +196,12 @@ df_clean = df.select(
     col("genre_group")
 )
 
+# (Opcional) Por si acaso, filtrar cualquier basura rara en rating_meaning
+df_clean = df_clean.filter(~col("rating_meaning").isin("TV-MA", "TV-G", "2020"))
+
+# ==========================================================
 # 11. Guardar en PARQUET limpio
+# ==========================================================
 df_clean.write.mode("overwrite").parquet(output_path)
 
 print("Netflix TV Shows SOLO EUROPA, LIMPIO + ESTANDARIZADO:", output_path)
