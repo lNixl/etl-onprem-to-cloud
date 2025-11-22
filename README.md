@@ -1,30 +1,82 @@
 # Ejecución del Sistema ETL con Airflow & Docker
 
-1. Primero crear una carpeta **.env**
+1. Primero crear una carpeta **.env**  
+   - En la raíz del proyecto crea una carpeta llamada `.env` (o usa un archivo `.env` según tu estructura).  
+   - Aquí guardarás tus credenciales de AWS que usará Airflow/Spark.
+
 2. Colocar dentro de la carpeta **.env**:
-   - ACCESS_KEY
-   - SECRET_ACCESS_KEY
+   - `ACCESS_KEY` → Access Key ID de AWS  
+   - `SECRET_ACCESS_KEY` → Secret Access Key de AWS  
+   > Estas variables serán leídas por los contenedores para conectarse a S3.
+
 3. Ejecutar:
-   - `docker compose up -d`
-   - *Si los servicios de Airflow no aparecen la primera vez, ejecutar nuevamente:*
-     - `docker compose up -d`
+   - `docker compose up -d`  
+     Levanta todos los servicios definidos en `docker-compose.yml` en segundo plano.  
+   - *Si los servicios de Airflow no aparecen la primera vez, ejecutar nuevamente:*  
+     - `docker compose up -d`  
+       A veces la primera ejecución no levanta todo correctamente; repetir el comando asegura que todos los contenedores queden arriba.
+
 4. Verificar que los servicios se levantaron:
-   - `docker compose ps`
+   - `docker compose ps`  
+     Muestra el estado de los contenedores (UP, EXITED, etc.) para confirmar que Airflow está corriendo.
+
 5. Cuando aparezcan los servicios de Airflow, inicializar la base de datos:
-   - `docker compose exec airflow-webserver airflow db init`
+   - `docker compose exec airflow-webserver airflow db init`  
+     Inicializa la base de datos interna de Airflow (crea tablas, metadatos, etc.).
+
 6. Acceder a la consola del contenedor para generar la key:
-   - `docker compose exec airflow-webserver bash`
+   - `docker compose exec airflow-webserver bash`  
+     Entra a una consola bash dentro del contenedor del webserver de Airflow.
+
 7. En la consola de Airflow ejecutar:
-   - `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+   - `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`  
+     Genera una **Fernet key**, que Airflow usa para encriptar contraseñas y conexiones.
+
 8. El comando genera un código similar:
-   - `u5zsDt8jDlTX1yigZ2jbHST58_elO9JdEvL8yebYkQ8=`
-9. Reemplazar ese valor en **AIRFLOW_CORE_FERNET_KEY** dentro del archivo **docker-compose.yml**
+   - `u5zsDt8jDlTX1yigZ2jbHST58_elO9JdEvL8yebYkQ8=`  
+   > Copia este valor completo.
+
+9. Reemplazar ese valor en **AIRFLOW_CORE_FERNET_KEY** dentro del archivo **docker-compose.yml**  
+   - Busca la variable `AIRFLOW__CORE__FERNET_KEY` y pega ahí la key generada.  
+   - Esto asegura que Airflow siempre use la misma key al reiniciar.
+
 10. Salir de la consola de Airflow:
-    - `exit`
+    - `exit`  
+      Cierra la sesión dentro del contenedor y vuelves a tu terminal.
+
 11. Reiniciar los servicios:
-    - `docker compose down -v`
-    - `docker compose up -d airflow-init`
-    - `docker compose up -d`
+    - `docker compose down -v`  
+      Apaga los contenedores y borra volúmenes (resetea el estado de la BD local de los contenedores).  
+    - `docker compose up -d airflow-init`  
+      Ejecuta el contenedor de inicialización de Airflow (crea estructuras internas necesarias).  
+    - `docker compose up -d`  
+      Vuelve a levantar todos los servicios listos para usar.
+
+13. Crear usuario y contraseña en Airflow
+    - `docker compose exec airflow-webserver airflow users create --username admin --password admin --firstname admin --lastname admin --role Admin --email admin@example.com`  
+      Crea un usuario administrador para entrar a la UI de Airflow.  
+    - `docker compose exec airflow-webserver airflow users list`  
+      Lista los usuarios para verificar que se creó correctamente.
+
+14. Probar el ETL de manera manual (sin esperar al scheduler de Airflow)
+
+    - Probar **extract**  
+      - `docker compose exec airflow-webserver python /opt/etl/extract.py`  
+        Ejecuta solo el script de extracción (lee datos de la fuente y los manda a S3 / staging).
+
+    - Probar **transform**  
+      - `docker compose exec airflow-webserver python /opt/etl/transform.py`  
+        Ejecuta las transformaciones con Spark/PySpark (limpieza, agregaciones, etc.).
+
+    - Probar **load**  
+      - `docker compose exec airflow-webserver python /opt/etl/load.py`  
+        Carga los datos ya transformados a la base de datos destino (MySQL, etc.).
+
+16. Si no quieres pensar mucho para reiniciar Docker
+    - `docker compose down`  
+      Apaga todos los contenedores (sin borrar volúmenes).  
+    - `docker compose up -d`  
+      Vuelve a levantar todo como estaba.
 
 ---
 > <span style="color: orange; font-weight: bold;">⚠️ NOTA:</span>  
